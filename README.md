@@ -17,7 +17,10 @@ The system combines **metadata filtering** with **semantic search** to provide m
 **Team Name [number]:** Sheesh[14]
 
 **PS ID:** 9 
-
+Team members:
+N.Ruchitha
+N.Harshitha
+Hemanya
 **Demo Video (Google Drive):**
 `________________`
 
