@@ -31,8 +31,9 @@ The system combines **metadata filtering** with **semantic search** to provide m
 - Qdrant (Local Vector Database)
 - HuggingFace Embeddings (all-MiniLM-L6-v2)
 
-# Project Structure
+## Project Structure
 
+```text
 BuildWithRAG/
 │
 ├── data/
@@ -50,7 +51,7 @@ BuildWithRAG/
 ├── requirements.txt
 ├── .env.example
 └── README.md
-
+```
 
 # Setup
 
