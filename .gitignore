@@ -1,0 +1,42 @@
+# Secrets — never commit these
+.env
+
+# Qdrant local embedded storage — created at runtime
+qdrant_data/
+
+# Python virtual environments
+.venv/
+.venv3.11/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS artefacts
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Raw dataset archive + duplicate extracted copy — data/ already has the clean xlsx
+CSI Build with RAG - Datasets.zip
+CSI Build with RAG - Datasets/
+
+# HuggingFace embedding model cache — large binary, regenerated on first run
+.hf_cache/
+
+# Local debug/scratch scripts from troubleshooting — not part of the real app
+test_local_embeddings.py
+test_pipeline.py
+
+# Local logs, if the app writes any
+logs/
