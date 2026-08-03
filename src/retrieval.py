@@ -94,7 +94,7 @@ JSON schema (return ONLY valid JSON, no markdown fences, no extra text):
     "style_keyword": <string | null>
   }},
   "era_filter": {{
-    "type": "active_year" | "year_range" | "before_year" | "after_year" | null,
+    "type": "active_in" | "before" | "after" | "between" | null,
     "year": <int | null>,
     "start": <int | null>,
     "end": <int | null>
@@ -108,28 +108,42 @@ RULES:
 1. Only set a filter field if the user clearly specifies that dimension. Leave others null.
 2. Normalise country and role values to lowercase to match the ALLOWED VALUES above exactly.
 3. For country and role: only use values from the ALLOWED VALUES lists above.
-4. For style_keyword: extract a lowercase keyword phrase (e.g. "left-arm fast", "leg spin",
-   "off spin", "right-arm fast-medium", "left-hand bat"). This will be used for substring
-   matching against the style field — you don't need an exact match from the allowed list.
-5. For era:
-   - "active in 2024" → {{"type": "active_year", "year": 2024}}
-   - "played in 1990" → {{"type": "active_year", "year": 1990}}
-   - "active in 1990" → {{"type": "active_year", "year": 1990}}
-   - "active in the 2000s" → {{"type": "year_range", "start": 2000, "end": 2009}}
-   - "1990s players" → {{"type": "year_range", "start": 1990, "end": 1999}}
-   - "after 1990" → {{"type": "after_year", "year": 1990}}
-   - "since 1990" → {{"type": "after_year", "year": 1990}}
-   - "active before 1950" → {{"type": "before_year", "year": 1950}}
-   - "active after 1950" → {{"type": "after_year", "year": 1950}}
+
+4. style_keyword — ONLY for actual batting/bowling styles that exist in the dataset.
+   Valid examples: "right-hand bat", "left-hand bat", "right-arm fast", "left-arm fast",
+   "fast-medium", "off break", "leg break", "leg spin", "off spin", "orthodox", "googly",
+   "medium pace".
+   This will be used for substring matching against the style field.
+   NEVER place descriptive/personality words here. The following MUST NOT become style_keyword:
+   aggressive, attacking, explosive, defensive, calm, legendary, great, successful,
+   consistent, dangerous, best, finisher, captain, match winner.
+   Those belong in semantic_query.
+
+5. semantic_query — anything describing playing behaviour, achievements, reputation,
+   personality or playing characteristics that is NOT a structured batting/bowling style.
+   Examples: "aggressive", "great finisher", "match winner", "known for yorkers",
+   "attacking batsman", "captain", "best spinner".
+   For hybrid queries (filter + description), set both filters AND semantic_query.
+   Leave it EMPTY ("") ONLY for pure filter/count questions with zero descriptive element.
+
+6. For era (use these EXACT type values):
+   - "active in 2024" → {{"type": "active_in", "year": 2024}}
+   - "played in 1990" → {{"type": "active_in", "year": 1990}}
+   - "active in 1990" → {{"type": "active_in", "year": 1990}}
+   - "active in the 2000s" → {{"type": "between", "start": 2000, "end": 2009}}
+   - "1990s players" → {{"type": "between", "start": 1990, "end": 1999}}
+   - "between 1990 and 2005" → {{"type": "between", "start": 1990, "end": 2005}}
+   - "after 1990" → {{"type": "after", "year": 1990}}
+   - "since 1990" → {{"type": "after", "year": 1990}}
+   - "active before 1950" → {{"type": "before", "year": 1950}}
+   - "active after 1950" → {{"type": "after", "year": 1950}}
    - No era mention → {{"type": null}}
-6. Set is_list_or_count=true for questions asking for a list or count
-   ("list all", "how many", "who are all", "show me all").
-7. Set out_of_scope=true if the question is completely outside cricket player data
-   (e.g. match results, IPL finals, tournament scores, current news, politics).
-8. Set semantic_query to the user's question for fuzzy/descriptive queries
-   (personality, playing style description, legacy, impact, etc.).
-   Leave it EMPTY ("") for pure filter/count questions with no descriptive element.
-9. For hybrid queries (filter + description), set both filters AND semantic_query.
+
+7. Set is_list_or_count=true for questions asking for a list or count
+   ("list", "show", "all", "how many", "count", "every", "who are all", "show me all").
+
+8. Set out_of_scope=true if the question is completely outside cricket player data
+   (e.g. match results, scores, IPL winners, World Cup winners, current news, politics).
 """
 
 
@@ -145,20 +159,24 @@ def _infer_era_filter_from_text(query: str) -> dict | None:
     """Infer era filters directly from the user's wording before the LLM response is used."""
     q = (query or "").strip().lower()
 
+    m_between = re.search(r"\bbetween\s+(\d{4})\s+and\s+(\d{4})\b", q)
+    if m_between:
+        return {"type": "between", "year": None, "start": int(m_between.group(1)), "end": int(m_between.group(2))}
+
     m_before = re.search(r"\b(before|prior to|earlier than)\s+(\d{4})\b", q)
     if m_before:
         year = int(m_before.group(2))
-        return {"type": "before_year", "year": year, "start": None, "end": None}
+        return {"type": "before", "year": year, "start": None, "end": None}
 
     m_after = re.search(r"\b(after|since)\s+(\d{4})\b", q)
     if m_after:
         year = int(m_after.group(2))
-        return {"type": "after_year", "year": year, "start": None, "end": None}
+        return {"type": "after", "year": year, "start": None, "end": None}
 
     m_overlap = re.search(r"\b(?:played|playing|active|was active|were active)\s+(?:in|during)\s+(\d{4})\b", q)
     if m_overlap:
         year = int(m_overlap.group(1))
-        return {"type": "active_year", "year": year, "start": None, "end": None}
+        return {"type": "active_in", "year": year, "start": None, "end": None}
 
     return None
 
@@ -288,14 +306,14 @@ def _build_qdrant_filter(extracted: dict, skip_style: bool = False) -> Filter | 
     era = extracted.get("era_filter", {})
     era_type = era.get("type")
 
-    if era_type == "active_year":
+    if era_type == "active_in":
         year = era.get("year")
         if year:
             # era_start <= year AND era_end >= year
             conditions.append(FieldCondition(key="era_start", range=Range(lte=year)))
             conditions.append(FieldCondition(key="era_end", range=Range(gte=year)))
 
-    elif era_type == "year_range":
+    elif era_type == "between":
         s = era.get("start")
         e = era.get("end")
         if s and e:
@@ -303,12 +321,12 @@ def _build_qdrant_filter(extracted: dict, skip_style: bool = False) -> Filter | 
             conditions.append(FieldCondition(key="era_start", range=Range(lte=e)))
             conditions.append(FieldCondition(key="era_end", range=Range(gte=s)))
 
-    elif era_type == "before_year":
+    elif era_type == "before":
         year = era.get("year")
         if year is not None:
             conditions.append(FieldCondition(key="era_end", range=Range(lt=year)))
 
-    elif era_type == "after_year":
+    elif era_type == "after":
         year = era.get("year")
         if year is not None:
             conditions.append(FieldCondition(key="era_start", range=Range(gt=year)))
